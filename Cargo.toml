@@ -1,0 +1,5 @@
+[package]
+name = "pyfmt"
+version = "0.1.0"
+authors = ["Jan Michael Auer"]
+edition = "2018"
