@@ -1,5 +1,3 @@
-//! TODO(ja): Doc
-
 // #![warn(missing_docs)]
 
 use std::borrow::Cow;
@@ -21,37 +19,52 @@ lazy_static::lazy_static! {
     ").unwrap();
 }
 
-#[derive(Debug)]
-pub enum Error {
-    InvalidChar(char),
-    ListRequired,
-    MapRequired,
-    MissingIndex,
-    MissingKey,
-    InvalidArg,
-    JsonFailed,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
+pub enum Position<'a> {
+    Index(usize),
+    Key(&'a str),
 }
 
-impl fmt::Display for Error {
+impl fmt::Display for Position<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::InvalidChar(c) => write!(f, "unsupported format character '{}'", c),
-            Error::ListRequired => write!(f, "format requires an argument list"),
-            Error::MapRequired => write!(f, "format requires an argument map"),
-            Error::MissingIndex => write!(f, "not enough format arguments"),
-            Error::MissingKey => write!(f, "missing named format argument"),
-            Error::InvalidArg => write!(f, "invalid format argument"),
-            Error::JsonFailed => write!(f, "could not serialize to JSON"),
+            Position::Index(index) => write!(f, "{}", index),
+            Position::Key(key) => f.write_str(key),
         }
     }
 }
 
-/// TODO(ja): Doc
+#[derive(Debug)]
+pub enum Error<'a> {
+    BadFormat(char),
+    ListRequired,
+    MapRequired,
+    MissingArg(Position<'a>),
+    BadArg(Position<'a>, &'static str),
+    BadRepr(Position<'a>, String),
+    Fmt(std::fmt::Error),
+}
+
+impl fmt::Display for Error<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::BadFormat(c) => write!(f, "unsupported format '{}'", c),
+            Error::ListRequired => write!(f, "format requires an argument list"),
+            Error::MapRequired => write!(f, "format requires an argument map"),
+            Error::MissingArg(Position::Index(_)) => write!(f, "not enough format arguments"),
+            Error::MissingArg(Position::Key(k)) => write!(f, "missing argument '{}'", k),
+            Error::BadArg(pos, format) => {
+                write!(f, "argument '{}' cannot be formatted as {}", pos, format)
+            }
+            Error::BadRepr(pos, reason) => write!(f, "error representing '{}': {}", pos, reason),
+            Error::Fmt(error) => write!(f, "{}", error),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum FormatMode {
-    /// TODO(ja): Doc
     NewStyle,
-    /// TODO(ja): Doc
     OldStyle,
 }
 
@@ -61,12 +74,9 @@ impl Default for FormatMode {
     }
 }
 
-/// TODO(ja): Doc
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum ReprMode {
-    /// TODO(ja): Doc
     Debug,
-    /// TODO(ja): Doc
     Json,
 }
 
@@ -185,6 +195,13 @@ pub trait FormatArgs {
     fn get_key(&self, key: &str) -> Result<Option<&dyn FormatArg>, ()> {
         Err(())
     }
+
+    fn get_pos(&self, position: Position<'_>) -> Result<Option<&dyn FormatArg>, Error<'static>> {
+        match position {
+            Position::Index(index) => self.get_index(index).map_err(|()| Error::ListRequired),
+            Position::Key(key) => self.get_key(key).map_err(|()| Error::MapRequired),
+        }
+    }
 }
 
 impl<T> FormatArgs for Vec<T>
@@ -267,7 +284,7 @@ enum FormatType {
 }
 
 impl FromStr for FormatType {
-    type Err = Error;
+    type Err = Error<'static>;
 
     fn from_str(string: &str) -> Result<Self, Self::Err> {
         Ok(match string {
@@ -284,15 +301,15 @@ impl FromStr for FormatType {
             "r" => FormatType::Repr,
             "s" => FormatType::Str,
             "%" => FormatType::Percent,
-            s => return Err(Error::InvalidChar(s.chars().next().unwrap_or_default())),
+            s => return Err(Error::BadFormat(s.chars().next().unwrap_or_default())),
         })
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 struct FormatSpec<'a> {
-    /// The key for named lookups.
-    pub key: Option<&'a str>,
+    /// The position for argument lookups.
+    pub position: Position<'a>,
     /// Flag: Display alternate form.
     pub alternate: bool,
     /// Flag: Pad with zeros for numeric values.
@@ -304,19 +321,22 @@ struct FormatSpec<'a> {
     /// Flag: Precede with a sign character.
     pub sign: bool,
     /// Minimum field width.
-    /// TODO(ja): Asterisk
+    // TODO(ja): Asterisk
     pub width: Option<usize>,
     /// Floating point precision.
-    /// TODO(ja): Asterisk
+    // TODO(ja): Asterisk
     pub precision: Option<usize>,
     /// The conversion type.
     pub ty: FormatType,
 }
 
 impl<'a> FormatSpec<'a> {
-    pub fn parse(captures: &'a Captures) -> Result<Self, Error> {
+    pub fn parse(index: usize, captures: &Captures<'a>) -> Result<Self, Error<'a>> {
         let mut spec = FormatSpec {
-            key: captures.name("key").map(|m| m.as_str()),
+            position: captures
+                .name("key")
+                .map(|m| Position::Key(m.as_str()))
+                .unwrap_or_else(|| Position::Index(index)),
             alternate: false,
             pad_zero: false,
             adjust_left: false,
@@ -345,13 +365,13 @@ impl<'a> FormatSpec<'a> {
         Ok(spec)
     }
 
-    #[rustfmt::skip]
     pub fn pyfmt(
         self,
+        pos: Position<'a>,
         argument: &dyn FormatArg,
         target: &mut String,
         options: &FormatOptions,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error<'a>> {
         match self.ty {
             FormatType::Int
             | FormatType::LowerFloat
@@ -359,66 +379,83 @@ impl<'a> FormatSpec<'a> {
             | FormatType::Float
             | FormatType::Char
             | FormatType::Str => {
-                write!(target, "{}", argument.as_display().ok_or(Error::InvalidArg)?).ok();
+                let arg = argument
+                    .as_display()
+                    .ok_or_else(|| Error::BadArg(pos, "string"))?;
+                write!(target, "{}", arg).map_err(Error::Fmt)?;
             }
             FormatType::Octal => {
-                write!(target, "{:o}", argument.as_octal().ok_or(Error::InvalidArg)?).ok();
+                let arg = argument
+                    .as_octal()
+                    .ok_or_else(|| Error::BadArg(pos, "octal"))?;
+                write!(target, "{:o}", arg).map_err(Error::Fmt)?;
             }
             FormatType::LowerHex => {
-                write!(target, "{:x}", argument.as_lower_hex().ok_or(Error::InvalidArg)?).ok();
+                let arg = argument
+                    .as_lower_hex()
+                    .ok_or_else(|| Error::BadArg(pos, "hex"))?;
+                write!(target, "{:x}", arg).map_err(Error::Fmt)?;
             }
             FormatType::UpperHex => {
-                write!(target, "{:X}", argument.as_upper_hex().ok_or(Error::InvalidArg)?).ok();
+                let arg = argument
+                    .as_upper_hex()
+                    .ok_or_else(|| Error::BadArg(pos, "hex"))?;
+                write!(target, "{:X}", arg).map_err(Error::Fmt)?;
             }
             FormatType::LowerExp => {
-                write!(target, "{:e}", argument.as_lower_exp().ok_or(Error::InvalidArg)?).ok();
+                let arg = argument
+                    .as_lower_exp()
+                    .ok_or_else(|| Error::BadArg(pos, "exp"))?;
+                write!(target, "{:e}", arg).map_err(Error::Fmt)?;
             }
             FormatType::UpperExp => {
-                write!(target, "{:E}", argument.as_upper_exp().ok_or(Error::InvalidArg)?).ok();
+                let arg = argument
+                    .as_upper_exp()
+                    .ok_or_else(|| Error::BadArg(pos, "exp"))?;
+                write!(target, "{:E}", arg).map_err(Error::Fmt)?;
             }
             FormatType::Repr => match options.repr {
                 ReprMode::Debug => {
-                    write!(target, "{:?}", argument.as_debug().ok_or(Error::InvalidArg)?).ok();
+                    let arg = argument
+                        .as_debug()
+                        .ok_or_else(|| Error::BadArg(pos, "debug"))?;
+                    write!(target, "{:?}", arg).map_err(Error::Fmt)?;
                 }
                 ReprMode::Json => {
-                    let json = serde_json::to_string(argument.as_serialize().ok_or(Error::InvalidArg)?)
-                        .map_err(|_| Error::JsonFailed)?;
+                    let arg = argument
+                        .as_serialize()
+                        .ok_or_else(|| Error::BadArg(pos, "json"))?;
+                    let json = serde_json::to_string(arg)
+                        .map_err(|e| Error::BadRepr(pos, e.to_string()))?;
                     target.push_str(&json);
                 }
             },
             FormatType::Percent => {
                 write!(target, "%").ok();
-            },
+            }
         }
 
         Ok(())
     }
 }
 
-/// TODO(ja): Doc
 #[derive(Clone)]
 pub struct FormatOptions {
-    /// TODO(ja): Doc
     pub mode: FormatMode,
-    /// TODO(ja): Doc
     pub repr: ReprMode,
-    /// TODO(ja): Doc
     pub simple: bool,
 }
 
 impl FormatOptions {
-    /// TODO(ja): Doc
     pub fn new_style() -> Self {
         FormatOptions::with_mode(FormatMode::NewStyle)
     }
 
-    /// TODO(ja): Doc
     pub fn old_style() -> Self {
         FormatOptions::with_mode(FormatMode::OldStyle)
     }
 
-    /// TODO(ja): Doc
-    pub fn pyfmt<'f, A>(&self, format: &'f str, args: &A) -> Result<Cow<'f, str>, Error>
+    pub fn pyfmt<'f, A>(&self, format: &'f str, args: &A) -> Result<Cow<'f, str>, Error<'f>>
     where
         A: FormatArgs,
     {
@@ -434,19 +471,12 @@ impl FormatOptions {
             let mat = captures.get(0).unwrap();
             string.push_str(&format[last_match..mat.start()]);
 
-            let spec = FormatSpec::parse(&captures)?;
-            let argument = match spec.key {
-                Some(ref key) => args
-                    .get_key(key)
-                    .map_err(|_| Error::MapRequired)?
-                    .ok_or(Error::MissingKey)?,
-                None => args
-                    .get_index(index)
-                    .map_err(|_| Error::ListRequired)?
-                    .ok_or(Error::MissingIndex)?,
-            };
+            let spec = FormatSpec::parse(index, &captures)?;
+            let argument = args
+                .get_pos(spec.position)?
+                .ok_or_else(|| Error::MissingArg(spec.position))?;
 
-            spec.pyfmt(argument, &mut string, self)?;
+            spec.pyfmt(spec.position, argument, &mut string, self)?;
             last_match = mat.end();
         }
 
@@ -454,7 +484,6 @@ impl FormatOptions {
         Ok(Cow::Owned(string))
     }
 
-    /// TODO(ja): Doc
     fn with_mode(mode: FormatMode) -> Self {
         FormatOptions {
             mode,
@@ -470,16 +499,14 @@ impl Default for FormatOptions {
     }
 }
 
-/// TODO(ja): Doc
-pub fn pyfmt<'f, A>(format: &'f str, args: &A) -> Result<Cow<'f, str>, Error>
+pub fn pyfmt<'f, A>(format: &'f str, args: &A) -> Result<Cow<'f, str>, Error<'f>>
 where
     A: FormatArgs,
 {
     FormatOptions::new_style().pyfmt(format, args)
 }
 
-/// TODO(ja): Doc
-pub fn pyfmt_old<'f, A>(format: &'f str, args: &A) -> Result<Cow<'f, str>, Error>
+pub fn pyfmt_old<'f, A>(format: &'f str, args: &A) -> Result<Cow<'f, str>, Error<'f>>
 where
     A: FormatArgs,
 {
