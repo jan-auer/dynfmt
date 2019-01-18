@@ -18,3 +18,6 @@ assert_eq!("hello, world", formatted.expect("formatting failed"));
 ```
 
 See the [Documentation](https://docs.rs/dynfmt) for more information.
+
+[`std::fmt`]: https://doc.rust-lang.org/stable/std/fmt/
+[`format`]: https://docs.rs/dynfmt/latest/dynfmt/trait.Format.html
