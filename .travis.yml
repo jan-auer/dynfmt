@@ -1,0 +1,16 @@
+language: rust
+cache:
+  - cargo
+
+matrix:
+  include:
+    - name: Style
+      script: cargo fmt -- --check
+      install: rustup component add rustfmt
+    - name: Lint
+      script: cargo clippy --all-features --tests --examples -- -D clippy::all
+      install: rustup component add clippy
+    - name: Test Minimal
+      script: cargo test --no-default-features
+    - name: Test All
+      script: cargo test --all-features

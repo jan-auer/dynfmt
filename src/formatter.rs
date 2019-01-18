@@ -64,6 +64,7 @@ impl serde::ser::Error for FormatError {
     }
 }
 
+#[cfg(feature = "json")]
 impl From<serde_json::Error> for FormatError {
     fn from(error: serde_json::Error) -> Self {
         FormatError::Serde(error.to_string())
@@ -108,6 +109,7 @@ where
 
     pub fn as_write(&mut self) -> &mut W {
         self.convert(FormatterTarget::new);
+        #[cfg_attr(not(feature = "json"), allow(unreachable_patterns))]
         match self {
             FormatterTarget::Write(inner) => inner,
             _ => unreachable!(),
@@ -117,6 +119,7 @@ where
     #[cfg(feature = "json")]
     pub fn as_compact(&mut self) -> &mut CompactJsonSerializer<W> {
         self.convert(FormatterTarget::compact);
+        #[cfg_attr(not(feature = "json"), allow(unreachable_patterns))]
         match self {
             FormatterTarget::Compact(inner) => inner,
             _ => unreachable!(),
@@ -186,7 +189,7 @@ where
     }
 
     #[cfg(not(feature = "json"))]
-    fn serialize<D: Serialize>(&mut self, value: &D) -> Result<(), FormatError> {
+    fn serialize<D: Serialize>(&mut self, _value: &D) -> Result<(), FormatError> {
         Err(FormatError::Type(FormatType::Object))
     }
 

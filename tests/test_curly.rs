@@ -22,7 +22,12 @@ test_fmt!(negative_display, "hello, -42!", "hello, {}!", -42);
 test_fmt!(float_display, "hello, 4.2!", "hello, {}!", 4.2);
 test_fmt!(boolean_display, "hello, true!", "hello, {}!", true);
 
-test_fmt!(string_display_by_index, "hello, world!", "hello, {0}!", "world");
+test_fmt!(
+    string_display_by_index,
+    "hello, world!",
+    "hello, {0}!",
+    "world"
+);
 
 #[test]
 fn string_display_by_name() {
@@ -31,6 +36,8 @@ fn string_display_by_name() {
 
     assert_eq!(
         "hello, world!",
-        SimpleCurlyFormat.format("hello, {name}!", args).expect("formatting failed")
+        SimpleCurlyFormat
+            .format("hello, {name}!", args)
+            .expect("formatting failed")
     );
 }
