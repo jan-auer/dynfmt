@@ -3,6 +3,7 @@ name = "dynfmt"
 version = "0.1.0"
 authors = ["Jan Michael Auer <mail@jauer.org>"]
 edition = "2018"
+license = "MIT"
 readme = "README.md"
 repository = "https://github.com/jan-auer/dynfmt"
 homepage = "https://github.com/jan-auer/dynfmt"
