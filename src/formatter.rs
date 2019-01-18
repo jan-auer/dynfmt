@@ -175,7 +175,7 @@ where
     }
 
     #[cfg(feature = "json")]
-    fn debug<D: Serialize>(&mut self, value: &D) -> Result<(), FormatError> {
+    fn serialize<D: Serialize>(&mut self, value: &D) -> Result<(), FormatError> {
         if self.alternate {
             value.serialize(self.target.as_pretty()).map_err(Into::into)
         } else {
@@ -186,8 +186,8 @@ where
     }
 
     #[cfg(not(feature = "json"))]
-    fn debug<D: Serialize>(&mut self, value: &D) -> Result<(), FormatError> {
-        Err(FormatError::Type(FormatType::Debug))
+    fn serialize<D: Serialize>(&mut self, value: &D) -> Result<(), FormatError> {
+        Err(FormatError::Type(FormatType::Object))
     }
 
     fn fmt_internal<T>(&mut self, value: &T, fmt: FormatFn<T>) -> Result<(), FormatError> {
@@ -198,6 +198,12 @@ where
         } else {
             write!(self.target.as_write(), "{}", proxy).map_err(FormatError::Io)
         }
+    }
+
+    // TODO: Implement this
+    #[allow(unused)]
+    fn debug<D: fmt::Debug>(&mut self, value: &D) -> Result<(), FormatError> {
+        self.fmt_internal(value, fmt::Debug::fmt)
     }
 
     fn display<D: fmt::Display>(&mut self, value: &D) -> Result<(), FormatError> {
@@ -541,7 +547,7 @@ where
     fn serialize_bool(self, v: bool) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             other => Err(FormatError::Type(other)),
         }
     }
@@ -549,7 +555,7 @@ where
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
             FormatType::UpperHex => self.upper_hex(&v),
@@ -561,7 +567,7 @@ where
     fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
             FormatType::UpperHex => self.upper_hex(&v),
@@ -573,7 +579,7 @@ where
     fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
             FormatType::UpperHex => self.upper_hex(&v),
@@ -585,7 +591,7 @@ where
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
             FormatType::UpperHex => self.upper_hex(&v),
@@ -597,7 +603,7 @@ where
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
             FormatType::UpperHex => self.upper_hex(&v),
@@ -609,7 +615,7 @@ where
     fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
             FormatType::UpperHex => self.upper_hex(&v),
@@ -621,7 +627,7 @@ where
     fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
             FormatType::UpperHex => self.upper_hex(&v),
@@ -633,7 +639,7 @@ where
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
             FormatType::UpperHex => self.upper_hex(&v),
@@ -645,7 +651,7 @@ where
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::LowerExp => self.lower_exp(&v),
             FormatType::UpperExp => self.upper_exp(&v),
             other => Err(FormatError::Type(other)),
@@ -655,7 +661,7 @@ where
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::LowerExp => self.lower_exp(&v),
             FormatType::UpperExp => self.upper_exp(&v),
             other => Err(FormatError::Type(other)),
@@ -665,7 +671,7 @@ where
     fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             other => Err(FormatError::Type(other)),
         }
     }
@@ -673,7 +679,7 @@ where
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&v),
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Pointer => self.pointer(&v),
             other => Err(FormatError::Type(other)),
         }
@@ -681,7 +687,7 @@ where
 
     fn serialize_bytes(self, v: &[u8]) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Debug => self.debug(&v),
+            FormatType::Object => self.serialize(&v),
             FormatType::Pointer => self.pointer(&v),
             other => Err(FormatError::Type(other)),
         }
@@ -701,7 +707,7 @@ where
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
         match self.ty {
             FormatType::Display => self.display(&"null"),
-            FormatType::Debug => self.debug(&()),
+            FormatType::Object => self.serialize(&()),
             other => Err(FormatError::Type(other)),
         }
     }
@@ -745,7 +751,7 @@ where
 
     #[cfg(feature = "json")]
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        if self.ty != FormatType::Debug && self.ty != FormatType::Display {
+        if self.ty != FormatType::Object && self.ty != FormatType::Display {
             return Err(FormatError::Type(self.ty));
         }
 
@@ -766,7 +772,7 @@ where
 
     #[cfg(feature = "json")]
     fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        if self.ty != FormatType::Debug && self.ty != FormatType::Display {
+        if self.ty != FormatType::Object && self.ty != FormatType::Display {
             return Err(FormatError::Type(self.ty));
         }
 
@@ -791,7 +797,7 @@ where
         name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleStruct, Self::Error> {
-        if self.ty != FormatType::Debug && self.ty != FormatType::Display {
+        if self.ty != FormatType::Object && self.ty != FormatType::Display {
             return Err(FormatError::Type(self.ty));
         }
 
@@ -818,7 +824,7 @@ where
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleVariant, Self::Error> {
-        if self.ty != FormatType::Debug && self.ty != FormatType::Display {
+        if self.ty != FormatType::Object && self.ty != FormatType::Display {
             return Err(FormatError::Type(self.ty));
         }
 
@@ -839,7 +845,7 @@ where
 
     #[cfg(feature = "json")]
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
-        if self.ty != FormatType::Debug && self.ty != FormatType::Display {
+        if self.ty != FormatType::Object && self.ty != FormatType::Display {
             return Err(FormatError::Type(self.ty));
         }
 
@@ -864,7 +870,7 @@ where
         name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStruct, Self::Error> {
-        if self.ty != FormatType::Debug && self.ty != FormatType::Display {
+        if self.ty != FormatType::Object && self.ty != FormatType::Display {
             return Err(FormatError::Type(self.ty));
         }
 
@@ -891,7 +897,7 @@ where
         variant: &'static str,
         len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        if self.ty != FormatType::Debug && self.ty != FormatType::Display {
+        if self.ty != FormatType::Object && self.ty != FormatType::Display {
             return Err(FormatError::Type(self.ty));
         }
 

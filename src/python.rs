@@ -38,7 +38,7 @@ fn parse_next(captures: Captures<'_>) -> ArgumentResult<'_> {
         "E" => FormatType::UpperExp,
         "f" | "F" | "g" | "G" => FormatType::Display,
         "c" | "s" => FormatType::Display,
-        "r" => FormatType::Debug,
+        "r" => FormatType::Object,
         "%" => FormatType::Literal("%"),
         s => return Err(Error::BadFormat(s.chars().next().unwrap_or_default())),
     };

@@ -214,8 +214,16 @@ pub enum FormatType {
 
     /// Print the [debug] representation of the argument.
     ///
+    /// **This is not yet implemented!**
+    ///
     /// [debug]: https://doc.rust-lang.org/stable/std/fmt/trait.Debug.html
     Debug,
+
+    /// Print a structured representation of the argument.
+    ///
+    /// This will serialize the argument as JSON. If the `json` feature is turned off, an argument
+    /// like this will result in an error.
+    Object,
 
     /// Print the [octal] representation of the argument.
     ///
@@ -261,7 +269,7 @@ impl FormatType {
     pub fn name(self) -> &'static str {
         match self {
             FormatType::Display => "string",
-            FormatType::Debug => "structure",
+            FormatType::Debug => "debug",
             FormatType::Octal => "octal",
             FormatType::LowerHex => "lower hex",
             FormatType::UpperHex => "upper hex",
@@ -269,6 +277,7 @@ impl FormatType {
             FormatType::Binary => "binary",
             FormatType::LowerExp => "lower exp",
             FormatType::UpperExp => "upper exp",
+            FormatType::Object => "object",
             FormatType::Literal(s) => s,
         }
     }
@@ -641,8 +650,8 @@ pub trait Format<'f> {
 
     /// Formats the given string with the specified arguments.
     ///
-    /// Individual arguments must implement [`serde::Serialize`]. Arguments must implement the
-    /// [`FormatArgs`] trait.
+    /// Individual arguments must implement [`Debug`] and [`serde::Serialize`]. The arguments
+    /// container must implement the [`FormatArgs`] trait.
     ///
     /// ```rust
     /// use dynfmt::{Format, NoopFormat};
@@ -651,6 +660,7 @@ pub trait Format<'f> {
     /// assert_eq!("hello, world", formatted.expect("formatting failed"));
     /// ```
     ///
+    /// [`Debug`]: https://doc.rust-lang.org/stable/std/fmt/trait.Debug.html
     /// [`serde::Serialize`]: https://docs.rs/serde/latest/serde/trait.Serialize.html
     /// [`FormatArgs`]: trait.FormatArgs.html
     fn format<A>(&self, format: &'f str, arguments: A) -> Result<Cow<'f, str>, Error<'f>>
