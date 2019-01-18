@@ -29,6 +29,8 @@
 //!    feature, if enabled. Without this feature, such values will cause an error.
 //!  - `python`: Implements the `printf`-like format that python 2 used for formatting strings. See
 //!    [`PythonFormat`] for more information.
+//!  - `curly`: A simple format string syntax using curly braces for arguments. Similar to .NET and
+//!    Rust, but much less capable. See [`SimpleCurlyFormat`] for mor information.
 //!
 //! # Extensibility
 //!
@@ -69,6 +71,7 @@
 //! [`Format`]: trait.Format.html
 //! [`ArgumentSpec`]: struct.ArgumentSpec.html
 //! [`PythonFormat`]: python/struct.PythonFormat.html
+//! [`SimpleCurlyFormat`]: curly/struct.SimpleCurlyFormat.html
 
 #![warn(missing_docs)]
 
