@@ -88,6 +88,11 @@ pub mod python;
 #[cfg(feature = "python")]
 pub use crate::python::PythonFormat;
 
+#[cfg(feature = "curly")]
+pub mod curly;
+#[cfg(feature = "curly")]
+pub use crate::curly::SimpleCurlyFormat;
+
 /// Refers to an argument within an argument list.
 ///
 /// During formatting, the formatter will pull arguments from the argument list. Depending on
