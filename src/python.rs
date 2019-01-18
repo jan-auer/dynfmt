@@ -1,8 +1,15 @@
+//! Implementation for old-style Python format strings.
+//!
+//! See [`PythonFormat`] for more information.
+//!
+//! [`PythonFormat`]: struct.PythonFormat.html
+
 use regex::{CaptureMatches, Captures, Regex};
 
-use crate::{Alignment, ArgumentSpec, Count, Error, Format, FormatType, Position};
+use crate::{Alignment, ArgumentSpec, Count, Error, Format, FormatType, Position, ArgumentResult};
 
 lazy_static::lazy_static! {
+    /// The regular expression used for parsing python format strings.
     static ref PYTHON_RE: Regex = Regex::new(r"(?x)
         %
         (?P<key>\(\w+\))?                            # Mapping key
@@ -14,6 +21,9 @@ lazy_static::lazy_static! {
     ").unwrap();
 }
 
+/// Format argument iterator for [`PythonFormat`].
+///
+/// [`PythonFormat`]: struct.PythonFormat.html
 pub struct PythonIter<'f> {
     captures: CaptureMatches<'static, 'f>,
 }
@@ -66,12 +76,12 @@ impl<'f> PythonIter<'f> {
         }
 
         let width = captures.name("width").and_then(|m| match m.as_str() {
-            "*" => Some(Count::Position(Position::Auto)),
+            "*" => Some(Count::Ref(Position::Auto)),
             value => value.parse().ok().map(Count::Value),
         });
 
         let precision = captures.name("precision").and_then(|m| match m.as_str() {
-            "*" => Some(Count::Position(Position::Auto)),
+            "*" => Some(Count::Ref(Position::Auto)),
             value => value.parse().ok().map(Count::Value),
         });
 
@@ -90,13 +100,46 @@ impl<'f> PythonIter<'f> {
 }
 
 impl<'f> Iterator for PythonIter<'f> {
-    type Item = Result<ArgumentSpec<'f>, Error<'f>>;
+    type Item = ArgumentResult<'f>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.captures.next().map(|c| self.parse_next(&c))
     }
 }
 
+/// Format implementation for old-style Python formatting.
+///
+/// Python uses a syntax similar to `sprintf` in the C language. Each format argument contains two
+/// or more characters and has the following components, which must occur in this order:
+///
+///  1. The `'%'` character, which marks the start of the specifier.
+///  2. Mapping key (optional), consisting of a parenthesised sequence of characters (for example,
+///     `(somename)`).
+///  3. Conversion flags (optional), which affect the result of some conversion types.
+///  4. Minimum field width (optional). If specified as an `'*'` (asterisk), the actual width is
+///     read from the next element of the tuple in values, and the object to convert comes after the
+///     minimum field width and optional precision.
+///  5. Precision (optional), given as a `'.'` (dot) followed by the precision. If specified as
+///     `'*'` (an asterisk), the actual width is read from the next element of the tuple in values,
+///     and the value to convert comes after the precision.
+///  6. Length modifier (optional).
+///  7. Conversion type.
+///
+/// Most of the conversion types are mapped to the standard `Display` trait. The `%r` conversion
+/// type is implemented as JSON, if the `json` feature is active and will otherwise error.
+///
+/// For the full specification, please refer to the [Python string formatting docs].
+///
+/// # Example
+///
+/// ```rust
+/// use dynfmt::{Format, PythonFormat};
+///
+/// let formatted = PythonFormat.format("hello, %s", &["world"]);
+/// assert_eq!("hello, world", formatted.expect("formatting failed"));
+/// ```
+///
+/// [Python string formatting docs]: https://docs.python.org/2/library/stdtypes.html#string-formatting-operations
 pub struct PythonFormat;
 
 impl<'f> Format<'f> for PythonFormat {

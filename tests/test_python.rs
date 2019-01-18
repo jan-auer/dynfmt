@@ -11,7 +11,7 @@ macro_rules! test_fmt {
             assert_eq!(
                 $expected,
                 PythonFormat
-                    .format($format, &[$($args),*][..])
+                    .format($format, &[$($args),*])
                     .expect("formatting failed")
             );
         }
