@@ -53,3 +53,16 @@ test_fmt!(number_upper_hex_alt, "hello, 0x2A!", "hello, %#X!", 42);
 
 test_fmt!(float_lower_exp, "hello, 4.2e0!", "hello, %e!", 4.2);
 test_fmt!(float_upper_exp, "hello, 4.2E0!", "hello, %E!", 4.2);
+
+#[test]
+fn string_display_by_name() {
+    let mut args = std::collections::BTreeMap::new();
+    args.insert("name", "world");
+
+    assert_eq!(
+        "hello, world!",
+        PythonFormat
+            .format("hello, %(name)s!", args)
+            .expect("formatting failed")
+    );
+}

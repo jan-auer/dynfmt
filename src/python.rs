@@ -12,7 +12,7 @@ lazy_static::lazy_static! {
 /// The regular expression used for parsing python format strings.
     static ref PYTHON_RE: Regex = Regex::new(r"(?x)
         %
-        (?P<key>\(\w+\))?                            # Mapping key
+        (?:\((?P<key>\w+)\))?                        # Mapping key
         (?P<flags>[\#|0|\-| |+]*)?                   # Conversion flags
         (?P<width>\*|\d+)?                           # Minimum field width
         (?:.(?P<precision>\*|\d+))?                  # Precision after decimal point
