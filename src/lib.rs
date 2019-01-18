@@ -1,33 +1,38 @@
 // #![warn(missing_docs)]
 
 use std::borrow::Cow;
-use std::fmt::{self, Write};
-use std::str::FromStr;
+use std::fmt;
+use std::io;
 
-use erased_serde::Serialize;
-use regex::{Captures, Regex};
+use erased_serde::Serialize as Serializable;
+use serde::ser::Serialize;
 
-lazy_static::lazy_static! {
-    static ref OLD_STYLE_RE: Regex = Regex::new(r"(?x)
-        %
-        (?P<key>\(\w+\))?                            # Mapping key
-        (?P<flags>[\#|0|\-| |+]*)?                   # Conversion flags
-        (?P<width>\*|\d+)?                           # Minimum field width
-        (?:.(?P<precision>\*|\d+))?                  # Precision after decimal point
-        [h|l|L]*                                     # Ignored length modifier
-        (?P<type>[d|i|o|u|x|X|e|E|f|F|g|G|c|r|s|%])  # Conversion type
-    ").unwrap();
-}
+mod formatter;
+
+use crate::formatter::{FormatError, Formatter};
+
+#[cfg(feature = "python")]
+pub mod python;
+#[cfg(feature = "python")]
+pub use crate::python::PythonFormat;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub enum Position<'a> {
+    Auto,
     Index(usize),
     Key(&'a str),
+}
+
+impl Default for Position<'_> {
+    fn default() -> Self {
+        Position::Auto
+    }
 }
 
 impl fmt::Display for Position<'_> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            Position::Auto => write!(f, "{{next}}"),
             Position::Index(index) => write!(f, "{}", index),
             Position::Key(key) => f.write_str(key),
         }
@@ -40,9 +45,19 @@ pub enum Error<'a> {
     ListRequired,
     MapRequired,
     MissingArg(Position<'a>),
-    BadArg(Position<'a>, &'static str),
-    BadRepr(Position<'a>, String),
-    Fmt(std::fmt::Error),
+    BadArg(Position<'a>, FormatType),
+    BadData(Position<'a>, String),
+    Io(io::Error),
+}
+
+impl<'a> Error<'a> {
+    fn from_serialize(error: FormatError, position: Position<'a>) -> Self {
+        match error {
+            FormatError::Type(ty) => Error::BadArg(position, ty),
+            FormatError::Serde(err) => Error::BadData(position, err),
+            FormatError::Io(err) => Error::Io(err),
+        }
+    }
 }
 
 impl fmt::Display for Error<'_> {
@@ -51,464 +66,316 @@ impl fmt::Display for Error<'_> {
             Error::BadFormat(c) => write!(f, "unsupported format '{}'", c),
             Error::ListRequired => write!(f, "format requires an argument list"),
             Error::MapRequired => write!(f, "format requires an argument map"),
-            Error::MissingArg(Position::Index(_)) => write!(f, "not enough format arguments"),
             Error::MissingArg(Position::Key(k)) => write!(f, "missing argument '{}'", k),
+            Error::MissingArg(Position::Auto) | Error::MissingArg(Position::Index(_)) => {
+                write!(f, "not enough format arguments")
+            }
             Error::BadArg(pos, format) => {
                 write!(f, "argument '{}' cannot be formatted as {}", pos, format)
             }
-            Error::BadRepr(pos, reason) => write!(f, "error representing '{}': {}", pos, reason),
-            Error::Fmt(error) => write!(f, "{}", error),
+            Error::BadData(pos, reason) => {
+                write!(f, "error formatting argument '{}': {}", pos, reason)
+            }
+            Error::Io(error) => write!(f, "{}", error),
         }
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub enum FormatMode {
-    NewStyle,
-    OldStyle,
-}
-
-impl Default for FormatMode {
-    fn default() -> Self {
-        FormatMode::NewStyle
-    }
-}
-
-#[derive(Clone, Copy, Eq, PartialEq)]
-pub enum ReprMode {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormatType {
+    Display,
     Debug,
-    Json,
+    Octal,
+    LowerHex,
+    UpperHex,
+    Pointer,
+    Binary,
+    LowerExp,
+    UpperExp,
+    Literal(&'static str),
 }
 
-impl Default for ReprMode {
+impl FormatType {
+    pub fn name(self) -> &'static str {
+        match self {
+            FormatType::Display => "string",
+            FormatType::Debug => "structure",
+            FormatType::Octal => "octal",
+            FormatType::LowerHex => "lower hex",
+            FormatType::UpperHex => "upper hex",
+            FormatType::Pointer => "pointer",
+            FormatType::Binary => "binary",
+            FormatType::LowerExp => "lower exp",
+            FormatType::UpperExp => "upper exp",
+            FormatType::Literal(s) => s,
+        }
+    }
+}
+
+impl Default for FormatType {
     fn default() -> Self {
-        ReprMode::Debug
+        FormatType::Display
     }
 }
 
-pub trait FormatArg {
-    fn as_display(&self) -> Option<&dyn std::fmt::Display> {
-        None
-    }
-
-    fn as_debug(&self) -> Option<&dyn std::fmt::Debug> {
-        None
-    }
-
-    fn as_octal(&self) -> Option<&dyn std::fmt::Octal> {
-        None
-    }
-
-    fn as_lower_hex(&self) -> Option<&dyn std::fmt::LowerHex> {
-        None
-    }
-
-    fn as_upper_hex(&self) -> Option<&dyn std::fmt::UpperHex> {
-        None
-    }
-
-    fn as_lower_exp(&self) -> Option<&dyn std::fmt::LowerExp> {
-        None
-    }
-
-    fn as_upper_exp(&self) -> Option<&dyn std::fmt::UpperExp> {
-        None
-    }
-
-    fn as_serialize(&self) -> Option<&dyn Serialize> {
-        None
+impl fmt::Display for FormatType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(self.name())
     }
 }
 
-macro_rules! derive_format_method {
-    (display) => {
-        fn as_display(&self) -> Option<&dyn std::fmt::Display> { Some(self) }
-    };
-    (debug) => {
-        fn as_debug(&self) -> Option<&dyn std::fmt::Debug> { Some(self) }
-    };
-    (octal) => {
-        fn as_octal(&self) -> Option<&dyn std::fmt::Octal> { Some(self) }
-    };
-    (lower_hex) => {
-        fn as_lower_hex(&self) -> Option<&dyn std::fmt::LowerHex> { Some(self) }
-    };
-    (upper_hex) => {
-        fn as_upper_hex(&self) -> Option<&dyn std::fmt::UpperHex> { Some(self) }
-    };
-    (lower_exp) => {
-        fn as_lower_exp(&self) -> Option<&dyn std::fmt::LowerExp> { Some(self) }
-    };
-    (upper_exp) => {
-        fn as_upper_exp(&self) -> Option<&dyn std::fmt::UpperExp> { Some(self) }
-    };
-    (serialize) => {
-        fn as_serialize(&self) -> Option<&dyn Serialize> { Some(self) }
-    };
-    ($arg:ident,) => {
-        derive_format_method!($arg);
-    };
-    ($arg:ident, $($args:tt)*) => {
-        derive_format_method!($arg);
-        derive_format_method!($($args)*);
-    };
-}
-
-macro_rules! derive_format_arg {
-    ($type:tt, $($args:tt)*) => {
-        impl FormatArg for $type {
-            derive_format_method!($($args)*);
-        }
-    };
-    (&'_ $type:tt, $($args:tt)*) => {
-        impl FormatArg for &'_ $type {
-            derive_format_method!($($args)*);
-        }
-    };
-}
-
-derive_format_arg!(String, display, debug, serialize);
-derive_format_arg!(&'_ str, display, debug, serialize);
-derive_format_arg!(bool, display, debug, serialize);
-derive_format_arg!(char, display, debug, serialize);
-derive_format_arg!(u8, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(i8, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(u16, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(i16, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(u32, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(i32, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(u64, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(i64, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(u128, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(i128, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(usize, display, debug, octal, lower_hex, upper_hex, serialize);
-derive_format_arg!(f32, display, debug, lower_exp, upper_exp, serialize);
-derive_format_arg!(f64, display, debug, lower_exp, upper_exp, serialize);
+pub type Argument<'a> = &'a dyn Serializable;
 
 pub trait FormatArgs {
     #[allow(unused_variables)]
-    fn get_index(&self, index: usize) -> Result<Option<&dyn FormatArg>, ()> {
+    fn get_index(&self, index: usize) -> Result<Option<Argument<'_>>, ()> {
         Err(())
     }
 
     #[allow(unused_variables)]
-    fn get_key(&self, key: &str) -> Result<Option<&dyn FormatArg>, ()> {
+    fn get_key(&self, key: &str) -> Result<Option<Argument<'_>>, ()> {
         Err(())
-    }
-
-    fn get_pos(&self, position: Position<'_>) -> Result<Option<&dyn FormatArg>, Error<'static>> {
-        match position {
-            Position::Index(index) => self.get_index(index).map_err(|()| Error::ListRequired),
-            Position::Key(key) => self.get_key(key).map_err(|()| Error::MapRequired),
-        }
     }
 }
 
 impl<T> FormatArgs for Vec<T>
 where
-    T: FormatArg,
+    T: Serialize,
 {
-    fn get_index(&self, index: usize) -> Result<Option<&dyn FormatArg>, ()> {
-        Ok(self.get(index).map(|arg| arg as &dyn FormatArg))
+    fn get_index(&self, index: usize) -> Result<Option<Argument<'_>>, ()> {
+        Ok(self.get(index).map(|arg| arg as Argument<'_>))
     }
 }
 
 impl<T> FormatArgs for &'_ [T]
 where
-    T: FormatArg,
+    T: Serialize,
 {
-    fn get_index(&self, index: usize) -> Result<Option<&dyn FormatArg>, ()> {
-        Ok(self.get(index).map(|arg| arg as &dyn FormatArg))
+    fn get_index(&self, index: usize) -> Result<Option<Argument<'_>>, ()> {
+        Ok(self.get(index).map(|arg| arg as Argument<'_>))
     }
 }
 
 impl<T> FormatArgs for std::collections::VecDeque<T>
 where
-    T: FormatArg,
+    T: Serialize,
 {
-    fn get_index(&self, index: usize) -> Result<Option<&dyn FormatArg>, ()> {
-        Ok(self.get(index).map(|arg| arg as &dyn FormatArg))
+    fn get_index(&self, index: usize) -> Result<Option<Argument<'_>>, ()> {
+        Ok(self.get(index).map(|arg| arg as Argument<'_>))
     }
 }
 
 impl<S, T> FormatArgs for std::collections::BTreeMap<S, T>
 where
     S: std::borrow::Borrow<str> + Ord,
-    T: FormatArg,
+    T: Serialize,
 {
-    fn get_key(&self, key: &str) -> Result<Option<&dyn FormatArg>, ()> {
-        Ok(self.get(key).map(|arg| arg as &dyn FormatArg))
+    fn get_key(&self, key: &str) -> Result<Option<Argument<'_>>, ()> {
+        Ok(self.get(key).map(|arg| arg as Argument<'_>))
     }
 }
 
 impl<S, T> FormatArgs for std::collections::HashMap<S, T>
 where
     S: std::borrow::Borrow<str> + std::hash::Hash + Eq,
-    T: FormatArg,
+    T: Serialize,
 {
-    fn get_key(&self, key: &str) -> Result<Option<&dyn FormatArg>, ()> {
-        Ok(self.get(key).map(|arg| arg as &dyn FormatArg))
+    fn get_key(&self, key: &str) -> Result<Option<Argument<'_>>, ()> {
+        Ok(self.get(key).map(|arg| arg as Argument<'_>))
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum FormatType {
-    /// Signed integer decimal.
-    Int,
-    /// Signed octal value.
-    Octal,
-    /// Signed hexadecimal (lowercase).
-    LowerHex,
-    /// Signed hexadecimal (lowercase).
-    UpperHex,
-    /// Floating point exponential format (lowercase).
-    LowerExp,
-    /// Floating point exponential format (lowercase).
-    UpperExp,
-    /// Floating point decimal format.
-    Float,
-    /// Floating point format. Uses lowercase exponential format if exponent is less than -4 or not
-    /// less than precision, decimal format otherwise.
-    LowerFloat,
-    /// Floating point format. Uses uppercase exponential format if exponent is less than -4 or not
-    /// less than precision, decimal format otherwise.
-    UpperFloat,
-    /// Single character (accepts integer or single character string).
-    Char,
-    /// String (serializes objects based on the `ReprMode`).
-    Repr,
-    /// String (stringifies objects using the `Display` trait).
-    Str,
-    /// No argument, results in a `%` character.
-    Percent,
-}
+impl<A> FormatArgs for &A
+where
+    A: FormatArgs,
+{
+    fn get_index(&self, index: usize) -> Result<Option<Argument<'_>>, ()> {
+        (*self).get_index(index)
+    }
 
-impl FromStr for FormatType {
-    type Err = Error<'static>;
-
-    fn from_str(string: &str) -> Result<Self, Self::Err> {
-        Ok(match string {
-            "d" | "i" | "u" => FormatType::Int,
-            "o" => FormatType::Octal,
-            "x" => FormatType::LowerHex,
-            "X" => FormatType::UpperHex,
-            "e" => FormatType::LowerExp,
-            "E" => FormatType::UpperExp,
-            "f" | "F" => FormatType::Float,
-            "g" => FormatType::LowerFloat,
-            "G" => FormatType::UpperFloat,
-            "c" => FormatType::Char,
-            "r" => FormatType::Repr,
-            "s" => FormatType::Str,
-            "%" => FormatType::Percent,
-            s => return Err(Error::BadFormat(s.chars().next().unwrap_or_default())),
-        })
+    fn get_key(&self, key: &str) -> Result<Option<Argument<'_>>, ()> {
+        (*self).get_key(key)
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct FormatSpec<'a> {
-    /// The position for argument lookups.
-    pub position: Position<'a>,
-    /// Flag: Display alternate form.
-    pub alternate: bool,
-    /// Flag: Pad with zeros for numeric values.
-    pub pad_zero: bool,
-    /// Flag: Adjust value to the left (overrides `pad_zero`).
-    pub adjust_left: bool,
-    /// Flag: Add a blank before the sign (requires `sign`).
-    pub blank: bool,
-    /// Flag: Precede with a sign character.
-    pub sign: bool,
-    /// Minimum field width.
-    // TODO(ja): Asterisk
-    pub width: Option<usize>,
-    /// Floating point precision.
-    // TODO(ja): Asterisk
-    pub precision: Option<usize>,
-    /// The conversion type.
-    pub ty: FormatType,
+struct ArgumentAccess<A> {
+    args: A,
+    index: usize,
 }
 
-impl<'a> FormatSpec<'a> {
-    pub fn parse(index: usize, captures: &Captures<'a>) -> Result<Self, Error<'a>> {
-        let mut spec = FormatSpec {
-            position: captures
-                .name("key")
-                .map(|m| Position::Key(m.as_str()))
-                .unwrap_or_else(|| Position::Index(index)),
-            alternate: false,
-            pad_zero: false,
-            adjust_left: false,
-            blank: false,
-            sign: false,
-            width: captures.name("width").and_then(|m| m.as_str().parse().ok()),
-            precision: captures
-                .name("precision")
-                .and_then(|m| m.as_str().parse().ok()),
-            ty: captures["type"].parse()?,
+impl<A> ArgumentAccess<A>
+where
+    A: FormatArgs,
+{
+    pub fn new(args: A) -> Self {
+        ArgumentAccess { args, index: 0 }
+    }
+
+    pub fn get_pos<'a>(&mut self, mut position: Position<'a>) -> Result<Argument<'_>, Error<'a>> {
+        if position == Position::Auto {
+            position = Position::Index(self.index);
+            self.index += 1;
+        }
+
+        let result = match position {
+            Position::Auto => unreachable!(),
+            Position::Index(index) => self.args.get_index(index).map_err(|()| Error::ListRequired),
+            Position::Key(key) => self.args.get_key(key).map_err(|()| Error::MapRequired),
         };
 
-        if let Some(flags) = captures.name("flags") {
-            for flag in flags.as_str().chars() {
-                match flag {
-                    '#' => spec.alternate = true,
-                    '0' => spec.pad_zero = true,
-                    '-' => spec.adjust_left = true,
-                    ' ' => spec.blank = true,
-                    '+' => spec.sign = true,
-                    _ => unreachable!(),
-                }
-            }
-        }
-
-        Ok(spec)
-    }
-
-    pub fn pyfmt(
-        self,
-        pos: Position<'a>,
-        argument: &dyn FormatArg,
-        target: &mut String,
-        options: &FormatOptions,
-    ) -> Result<(), Error<'a>> {
-        match self.ty {
-            FormatType::Int
-            | FormatType::LowerFloat
-            | FormatType::UpperFloat
-            | FormatType::Float
-            | FormatType::Char
-            | FormatType::Str => {
-                let arg = argument
-                    .as_display()
-                    .ok_or_else(|| Error::BadArg(pos, "string"))?;
-                write!(target, "{}", arg).map_err(Error::Fmt)?;
-            }
-            FormatType::Octal => {
-                let arg = argument
-                    .as_octal()
-                    .ok_or_else(|| Error::BadArg(pos, "octal"))?;
-                write!(target, "{:o}", arg).map_err(Error::Fmt)?;
-            }
-            FormatType::LowerHex => {
-                let arg = argument
-                    .as_lower_hex()
-                    .ok_or_else(|| Error::BadArg(pos, "hex"))?;
-                write!(target, "{:x}", arg).map_err(Error::Fmt)?;
-            }
-            FormatType::UpperHex => {
-                let arg = argument
-                    .as_upper_hex()
-                    .ok_or_else(|| Error::BadArg(pos, "hex"))?;
-                write!(target, "{:X}", arg).map_err(Error::Fmt)?;
-            }
-            FormatType::LowerExp => {
-                let arg = argument
-                    .as_lower_exp()
-                    .ok_or_else(|| Error::BadArg(pos, "exp"))?;
-                write!(target, "{:e}", arg).map_err(Error::Fmt)?;
-            }
-            FormatType::UpperExp => {
-                let arg = argument
-                    .as_upper_exp()
-                    .ok_or_else(|| Error::BadArg(pos, "exp"))?;
-                write!(target, "{:E}", arg).map_err(Error::Fmt)?;
-            }
-            FormatType::Repr => match options.repr {
-                ReprMode::Debug => {
-                    let arg = argument
-                        .as_debug()
-                        .ok_or_else(|| Error::BadArg(pos, "debug"))?;
-                    write!(target, "{:?}", arg).map_err(Error::Fmt)?;
-                }
-                ReprMode::Json => {
-                    let arg = argument
-                        .as_serialize()
-                        .ok_or_else(|| Error::BadArg(pos, "json"))?;
-                    let json = serde_json::to_string(arg)
-                        .map_err(|e| Error::BadRepr(pos, e.to_string()))?;
-                    target.push_str(&json);
-                }
-            },
-            FormatType::Percent => {
-                write!(target, "%").ok();
-            }
-        }
-
-        Ok(())
+        result.and_then(|opt| opt.ok_or_else(|| Error::MissingArg(position)))
     }
 }
 
-#[derive(Clone)]
-pub struct FormatOptions {
-    pub mode: FormatMode,
-    pub repr: ReprMode,
-    pub simple: bool,
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Alignment {
+    Left,
+    Center,
+    Right,
 }
 
-impl FormatOptions {
-    pub fn new_style() -> Self {
-        FormatOptions::with_mode(FormatMode::NewStyle)
+impl Default for Alignment {
+    fn default() -> Self {
+        Alignment::Right
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Count<'a> {
+    Value(usize),
+    Position(Position<'a>),
+}
+
+#[derive(Debug)]
+pub struct ArgumentSpec<'a> {
+    range: (usize, usize),
+    position: Position<'a>,
+    format: FormatType,
+    alternate: bool,
+    add_sign: bool,
+    pad_zero: bool,
+    fill_char: char,
+    alignment: Alignment,
+    width: Option<Count<'a>>,
+    precision: Option<Count<'a>>,
+}
+
+impl<'a> ArgumentSpec<'a> {
+    /// Creates a new argument specification with default values.
+    ///
+    /// The `start` and `end` parameters denote the inclusive range of this specification in the
+    /// format string. E.g. for a format string `"{}"`, the range is `(0, 1)`.
+    pub fn new(start: usize, end: usize) -> Self {
+        ArgumentSpec {
+            range: (start, end),
+            position: Position::default(),
+            format: FormatType::default(),
+            alternate: false,
+            add_sign: false,
+            pad_zero: false,
+            fill_char: ' ',
+            alignment: Alignment::default(),
+            width: None,
+            precision: None,
+        }
     }
 
-    pub fn old_style() -> Self {
-        FormatOptions::with_mode(FormatMode::OldStyle)
+    pub fn with_position(mut self, position: Position<'a>) -> Self {
+        self.position = position;
+        self
     }
 
-    pub fn pyfmt<'f, A>(&self, format: &'f str, args: &A) -> Result<Cow<'f, str>, Error<'f>>
+    pub fn with_format(mut self, format: FormatType) -> Self {
+        self.format = format;
+        self
+    }
+
+    pub fn with_alternate(mut self, alternate: bool) -> Self {
+        self.alternate = alternate;
+        self
+    }
+
+    pub fn with_sign(mut self, sign: bool) -> Self {
+        self.add_sign = sign;
+        self
+    }
+
+    pub fn with_zeros(mut self, pad_zero: bool) -> Self {
+        self.pad_zero = pad_zero;
+        self
+    }
+
+    pub fn with_fill(mut self, fill_char: char) -> Self {
+        self.fill_char = fill_char;
+        self
+    }
+
+    pub fn with_alignment(mut self, alignment: Alignment) -> Self {
+        self.alignment = alignment;
+        self
+    }
+
+    pub fn with_width(mut self, width: Option<Count<'a>>) -> Self {
+        self.width = width;
+        self
+    }
+
+    pub fn with_precision(mut self, precision: Option<Count<'a>>) -> Self {
+        self.precision = precision;
+        self
+    }
+
+    pub fn start(&self) -> usize {
+        self.range.0
+    }
+
+    pub fn end(&self) -> usize {
+        self.range.1
+    }
+
+    fn format_into<W, A>(&self, mut write: W, args: &mut ArgumentAccess<A>) -> Result<(), Error<'a>>
+    where
+        W: io::Write,
+        A: FormatArgs,
+    {
+        if let FormatType::Literal(literal) = self.format {
+            return write!(write, "{}", literal).map_err(Error::Io);
+        }
+
+        Formatter::new(write)
+            .with_type(self.format)
+            .with_alternate(self.alternate)
+            .format(args.get_pos(self.position)?)
+            .map_err(|e| Error::from_serialize(e, self.position))
+    }
+}
+
+pub trait Format<'f> {
+    type Iter: Iterator<Item = Result<ArgumentSpec<'f>, Error<'f>>>;
+
+    fn iter_args(&self, format: &'f str) -> Result<Self::Iter, Error<'f>>;
+
+    fn format<A>(&self, format: &'f str, arguments: A) -> Result<Cow<'f, str>, Error<'f>>
     where
         A: FormatArgs,
     {
-        let mut iter = OLD_STYLE_RE.captures_iter(format).enumerate().peekable();
+        let mut iter = self.iter_args(format)?.peekable();
         if iter.peek().is_none() {
             return Ok(Cow::Borrowed(format));
         }
 
-        let mut string = String::with_capacity(format.len());
+        let mut access = ArgumentAccess::new(arguments);
+        let mut buffer = Vec::with_capacity(format.len());
         let mut last_match = 0;
 
-        for (index, captures) in iter {
-            let mat = captures.get(0).unwrap();
-            string.push_str(&format[last_match..mat.start()]);
-
-            let spec = FormatSpec::parse(index, &captures)?;
-            let argument = args
-                .get_pos(spec.position)?
-                .ok_or_else(|| Error::MissingArg(spec.position))?;
-
-            spec.pyfmt(spec.position, argument, &mut string, self)?;
-            last_match = mat.end();
+        for spec in iter {
+            let spec = spec?;
+            buffer.extend(format[last_match..spec.start()].as_bytes());
+            spec.format_into(&mut buffer, &mut access)?;
+            last_match = spec.end();
         }
 
-        string.push_str(&format[last_match..]);
-        Ok(Cow::Owned(string))
+        buffer.extend(format[last_match..].as_bytes());
+        Ok(Cow::Owned(unsafe { String::from_utf8_unchecked(buffer) }))
     }
-
-    fn with_mode(mode: FormatMode) -> Self {
-        FormatOptions {
-            mode,
-            repr: ReprMode::Debug,
-            simple: false,
-        }
-    }
-}
-
-impl Default for FormatOptions {
-    fn default() -> Self {
-        FormatOptions::new_style()
-    }
-}
-
-pub fn pyfmt<'f, A>(format: &'f str, args: &A) -> Result<Cow<'f, str>, Error<'f>>
-where
-    A: FormatArgs,
-{
-    FormatOptions::new_style().pyfmt(format, args)
-}
-
-pub fn pyfmt_old<'f, A>(format: &'f str, args: &A) -> Result<Cow<'f, str>, Error<'f>>
-where
-    A: FormatArgs,
-{
-    FormatOptions::old_style().pyfmt(format, args)
 }

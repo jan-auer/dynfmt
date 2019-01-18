@@ -1,0 +1,108 @@
+use regex::{CaptureMatches, Captures, Regex};
+
+use crate::{Alignment, ArgumentSpec, Count, Error, Format, FormatType, Position};
+
+lazy_static::lazy_static! {
+    static ref PYTHON_RE: Regex = Regex::new(r"(?x)
+        %
+        (?P<key>\(\w+\))?                            # Mapping key
+        (?P<flags>[\#|0|\-| |+]*)?                   # Conversion flags
+        (?P<width>\*|\d+)?                           # Minimum field width
+        (?:.(?P<precision>\*|\d+))?                  # Precision after decimal point
+        [h|l|L]*                                     # Ignored length modifier
+        (?P<type>[d|i|o|u|x|X|e|E|f|F|g|G|c|r|s|%])  # Conversion type
+    ").unwrap();
+}
+
+pub struct PythonIter<'f> {
+    captures: CaptureMatches<'static, 'f>,
+}
+
+impl<'f> PythonIter<'f> {
+    fn new(format: &'f str) -> Self {
+        PythonIter {
+            captures: PYTHON_RE.captures_iter(format),
+        }
+    }
+
+    fn parse_next(&mut self, captures: &Captures<'f>) -> Result<ArgumentSpec<'f>, Error<'f>> {
+        let group = captures.get(0).unwrap();
+
+        let position = captures
+            .name("key")
+            .map(|m| Position::Key(m.as_str()))
+            .unwrap_or_else(|| Position::Auto);
+
+        let format = match &captures["type"] {
+            "d" | "i" | "u" => FormatType::Display,
+            "o" => FormatType::Octal,
+            "x" => FormatType::LowerHex,
+            "X" => FormatType::UpperHex,
+            "e" => FormatType::LowerExp,
+            "E" => FormatType::UpperExp,
+            "f" | "F" | "g" | "G" => FormatType::Display,
+            "c" | "s" => FormatType::Display,
+            "r" => FormatType::Debug,
+            "%" => FormatType::Literal("%"),
+            s => return Err(Error::BadFormat(s.chars().next().unwrap_or_default())),
+        };
+
+        let mut alternate = false;
+        let mut pad_zero = false;
+        let mut alignment = Alignment::Right;
+        let mut sign = false;
+
+        if let Some(flags) = captures.name("flags") {
+            for flag in flags.as_str().chars() {
+                match flag {
+                    '#' => alternate = true,
+                    '0' => pad_zero = true,
+                    '-' => alignment = Alignment::Left,
+                    ' ' => (), // blank between sign and number, not supported
+                    '+' => sign = true,
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        let width = captures.name("width").and_then(|m| match m.as_str() {
+            "*" => Some(Count::Position(Position::Auto)),
+            value => value.parse().ok().map(Count::Value),
+        });
+
+        let precision = captures.name("precision").and_then(|m| match m.as_str() {
+            "*" => Some(Count::Position(Position::Auto)),
+            value => value.parse().ok().map(Count::Value),
+        });
+
+        let spec = ArgumentSpec::new(group.start(), group.end())
+            .with_position(position)
+            .with_format(format)
+            .with_alternate(alternate)
+            .with_zeros(pad_zero)
+            .with_alignment(alignment)
+            .with_sign(sign)
+            .with_width(width)
+            .with_precision(precision);
+
+        Ok(spec)
+    }
+}
+
+impl<'f> Iterator for PythonIter<'f> {
+    type Item = Result<ArgumentSpec<'f>, Error<'f>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.captures.next().map(|c| self.parse_next(&c))
+    }
+}
+
+pub struct PythonFormat;
+
+impl<'f> Format<'f> for PythonFormat {
+    type Iter = PythonIter<'f>;
+
+    fn iter_args(&self, format: &'f str) -> Result<Self::Iter, Error<'f>> {
+        Ok(PythonIter::new(format))
+    }
+}
