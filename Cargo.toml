@@ -17,7 +17,7 @@ all-features = true
 
 [dependencies]
 erased-serde = "0.3.6"
-lazy_static = "1.2.0"
+lazy_static = { version = "1.2.0", optional = true }
 regex = { version = "1.1.0", optional = true }
 serde = "1.0.84"
 serde_json = { version = "1.0.36", optional = true }
@@ -25,5 +25,5 @@ serde_json = { version = "1.0.36", optional = true }
 [features]
 default = ["json"]
 json = ["serde_json"]
-python = ["regex"]
-curly = ["regex"]
+python = ["regex", "lazy_static"]
+curly = ["regex", "lazy_static"]
