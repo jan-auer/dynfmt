@@ -79,6 +79,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::io;
 
+use derive_enum_error::Error;
 use erased_serde::Serialize as Serializable;
 use serde::ser::Serialize;
 
@@ -146,32 +147,40 @@ impl fmt::Display for Position<'_> {
 /// An error returned during formatting.
 ///
 /// An error may borrow information from the format string.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum Error<'a> {
     /// An unknown format character has been specified in the format.
+    #[error(display = "unsupported format '{}'", _0)]
     BadFormat(char),
 
     /// A custom error during parsing a specific format.
+    #[error(display = "error parsing format string: {}", _0)]
     Parse(Cow<'a, str>),
 
     /// The format refers to an indexed argument, but the argument list does not support indexed
     /// access.
+    #[error(display = "format requires an argument list")]
     ListRequired,
 
     /// The format refers to a named argument, but the argument list does not support named access.
+    #[error(display = "format requires an argument map")]
     MapRequired,
 
     /// An argument was missing from the argument list.
+    #[error(display = "missing argument: {}", _0)]
     MissingArg(Position<'a>),
 
     /// An argument could not be formatted in the requested format.
+    #[error(display = "argument '{}' cannot be formatted as {}", _0, _1)]
     BadArg(Position<'a>, FormatType),
 
     /// Formatting the data with the requested format resulted in an error.
+    #[error(display = "error formatting argument '{}': {}", _0, _1)]
     BadData(Position<'a>, String),
 
     /// An I/O error occurred when writing into the target.
-    Io(io::Error),
+    #[error(display = "{}", _0)]
+    Io(#[error(source)] io::Error),
 }
 
 impl<'a> Error<'a> {
@@ -181,28 +190,6 @@ impl<'a> Error<'a> {
             FormatError::Type(ty) => Error::BadArg(position, ty),
             FormatError::Serde(err) => Error::BadData(position, err),
             FormatError::Io(err) => Error::Io(err),
-        }
-    }
-}
-
-impl fmt::Display for Error<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::BadFormat(c) => write!(f, "unsupported format '{}'", c),
-            Error::Parse(reason) => write!(f, "error parsing format string: {}", reason),
-            Error::ListRequired => write!(f, "format requires an argument list"),
-            Error::MapRequired => write!(f, "format requires an argument map"),
-            Error::MissingArg(Position::Key(k)) => write!(f, "missing argument '{}'", k),
-            Error::MissingArg(Position::Auto) | Error::MissingArg(Position::Index(_)) => {
-                write!(f, "not enough format arguments")
-            }
-            Error::BadArg(pos, format) => {
-                write!(f, "argument '{}' cannot be formatted as {}", pos, format)
-            }
-            Error::BadData(pos, reason) => {
-                write!(f, "error formatting argument '{}': {}", pos, reason)
-            }
-            Error::Io(error) => write!(f, "{}", error),
         }
     }
 }
