@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Remove use of deprecated `mem::uninitialized`.
+- Add messages to invocations of `unreachable!()`.
+
 ## 0.1.2
 
 Implement `std::error::Error` for `dynfmt::Error` (courtesy of @cecton).
