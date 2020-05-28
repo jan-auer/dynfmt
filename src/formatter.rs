@@ -1,5 +1,6 @@
 use std::fmt;
 use std::io;
+use std::mem::{self, MaybeUninit};
 
 use serde::{Serialize, Serializer};
 #[cfg(feature = "json")]
@@ -139,7 +140,12 @@ where
     where
         F: FnOnce(W) -> Self,
     {
-        *self = f(std::mem::replace(self, unsafe { std::mem::uninitialized() }).into_inner());
+        unsafe {
+            let mut placeholder = MaybeUninit::uninit();
+            mem::swap(self, &mut *placeholder.as_mut_ptr());
+            let converted = f(placeholder.assume_init().into_inner());
+            mem::forget(mem::replace(self, converted));
+        }
     }
 }
 
