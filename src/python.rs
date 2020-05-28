@@ -56,7 +56,7 @@ fn parse_next(captures: Captures<'_>) -> ArgumentResult<'_> {
                 '-' => alignment = Alignment::Left,
                 ' ' => (), // blank between sign and number, not supported
                 '+' => sign = true,
-                _ => unreachable!(),
+                c => unreachable!("unknown conversion flag \"{}\"", c),
             }
         }
     }

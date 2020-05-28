@@ -432,7 +432,7 @@ where
         }
 
         let result = match position {
-            Position::Auto => unreachable!(),
+            Position::Auto => unreachable!("Position::Auto matched twice"),
             Position::Index(index) => self.args.get_index(index).map_err(|()| Error::ListRequired),
             Position::Key(key) => self.args.get_key(key).map_err(|()| Error::MapRequired),
         };
