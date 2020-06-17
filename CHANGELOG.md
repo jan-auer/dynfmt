@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- Fix a panic in the Python parser. When a pipe (`|`) occurred in the format string, the formatter would panic with `"unknown conversion flag"` due to an invalid Regex.
+
 ## 0.1.3
 
 - Remove use of deprecated `mem::uninitialized`.
