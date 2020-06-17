@@ -12,12 +12,12 @@ lazy_static::lazy_static! {
 /// The regular expression used for parsing python format strings.
     static ref PYTHON_RE: Regex = Regex::new(r"(?x)
         %
-        (?:\((?P<key>\w+)\))?                        # Mapping key
-        (?P<flags>[\#|0|\-| |+]*)?                   # Conversion flags
-        (?P<width>\*|\d+)?                           # Minimum field width
-        (?:.(?P<precision>\*|\d+))?                  # Precision after decimal point
-        [h|l|L]*                                     # Ignored length modifier
-        (?P<type>[d|i|o|u|x|X|e|E|f|F|g|G|c|r|s|%])  # Conversion type
+        (?:\((?P<key>\w+)\))?         # Mapping key
+        (?P<flags>[\#0\- +]*)?        # Conversion flags
+        (?P<width>\*|\d+)?            # Minimum field width
+        (?:.(?P<precision>\*|\d+))?   # Precision after decimal point
+        [hlL]*                        # Ignored length modifier
+        (?P<type>[diouxXeEfFgGcrs%])  # Conversion type
     ").unwrap();
 }
 
