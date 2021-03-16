@@ -79,7 +79,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::io;
 
-use derive_enum_error::Error;
+use thiserror::Error;
 use erased_serde::Serialize as Serializable;
 use serde::ser::Serialize;
 
@@ -150,37 +150,37 @@ impl fmt::Display for Position<'_> {
 #[derive(Debug, Error)]
 pub enum Error<'a> {
     /// An unknown format character has been specified in the format.
-    #[error(display = "unsupported format '{}'", _0)]
+    #[error("unsupported format '{0}'")]
     BadFormat(char),
 
     /// A custom error during parsing a specific format.
-    #[error(display = "error parsing format string: {}", _0)]
+    #[error("error parsing format string: {0}")]
     Parse(Cow<'a, str>),
 
     /// The format refers to an indexed argument, but the argument list does not support indexed
     /// access.
-    #[error(display = "format requires an argument list")]
+    #[error("format requires an argument list")]
     ListRequired,
 
     /// The format refers to a named argument, but the argument list does not support named access.
-    #[error(display = "format requires an argument map")]
+    #[error("format requires an argument map")]
     MapRequired,
 
     /// An argument was missing from the argument list.
-    #[error(display = "missing argument: {}", _0)]
+    #[error("missing argument: {0}")]
     MissingArg(Position<'a>),
 
     /// An argument could not be formatted in the requested format.
-    #[error(display = "argument '{}' cannot be formatted as {}", _0, _1)]
+    #[error("argument '{0}' cannot be formatted as {1}")]
     BadArg(Position<'a>, FormatType),
 
     /// Formatting the data with the requested format resulted in an error.
-    #[error(display = "error formatting argument '{}': {}", _0, _1)]
+    #[error("error formatting argument '{0}': {1}")]
     BadData(Position<'a>, String),
 
     /// An I/O error occurred when writing into the target.
-    #[error(display = "{}", _0)]
-    Io(#[error(source)] io::Error),
+    #[error("{0}")]
+    Io(#[from] io::Error),
 }
 
 impl<'a> Error<'a> {
