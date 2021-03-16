@@ -180,7 +180,7 @@ pub enum Error<'a> {
 
     /// An I/O error occurred when writing into the target.
     #[error("{0}")]
-    Io(#[from] io::Error),
+    Io(#[source] io::Error),
 }
 
 impl<'a> Error<'a> {
