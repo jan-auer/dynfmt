@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.5
+
+- Update error derivation approach to use [thiserror](https://crates.io/crates/thiserror).
+
 ## 0.1.4
 
 - Fix a panic in the Python parser. When a pipe (`|`) occurred in the format string, the formatter would panic with `"unknown conversion flag"` due to an invalid Regex.
