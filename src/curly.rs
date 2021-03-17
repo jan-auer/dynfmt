@@ -19,19 +19,20 @@ fn parse_position(key: &str) -> Position<'_> {
         .unwrap_or_else(|_| Position::Key(key))
 }
 
-fn parse_next(captures: Captures<'_>) -> ArgumentResult<'_> {
+fn parse_next(captures: Captures<'_>) -> ArgumentSpec<'_> {
     let position = captures
         .name("key")
         .map(|m| parse_position(m.as_str()))
         .unwrap_or_else(|| Position::Auto);
 
     let group = captures.get(0).unwrap();
-    Ok(ArgumentSpec::new(group.start(), group.end()).with_position(position))
+    ArgumentSpec::new(group.start(), group.end()).with_position(position)
 }
 
 /// Format argument iterator for [`SimpleCurlyFormat`].
 ///
 /// [`SimpleCurlyFormat`]: struct.SimpleCurlyFormat.html
+#[derive(Debug)]
 pub struct SimpleCurlyIter<'f> {
     captures: CaptureMatches<'static, 'f>,
 }
@@ -48,7 +49,7 @@ impl<'f> Iterator for SimpleCurlyIter<'f> {
     type Item = ArgumentResult<'f>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.captures.next().map(parse_next)
+        self.captures.next().map(|capture| Ok(parse_next(capture)))
     }
 }
 
@@ -69,6 +70,7 @@ impl<'f> Iterator for SimpleCurlyIter<'f> {
 /// let formatted = SimpleCurlyFormat.format("hello, {}", &["world"]);
 /// assert_eq!("hello, world", formatted.expect("formatting failed"));
 /// ```
+#[derive(Debug)]
 pub struct SimpleCurlyFormat;
 
 impl<'f> Format<'f> for SimpleCurlyFormat {

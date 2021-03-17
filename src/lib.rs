@@ -74,14 +74,15 @@
 //! [`SimpleCurlyFormat`]: curly/struct.SimpleCurlyFormat.html
 
 #![warn(missing_docs)]
+#![allow(clippy::result_unit_err)]
 
 use std::borrow::Cow;
 use std::fmt;
 use std::io;
 
-use thiserror::Error;
 use erased_serde::Serialize as Serializable;
 use serde::ser::Serialize;
+use thiserror::Error;
 
 mod formatter;
 
@@ -437,7 +438,7 @@ where
             Position::Key(key) => self.args.get_key(key).map_err(|()| Error::MapRequired),
         };
 
-        result.and_then(|opt| opt.ok_or_else(|| Error::MissingArg(position)))
+        result.and_then(|opt| opt.ok_or(Error::MissingArg(position)))
     }
 }
 

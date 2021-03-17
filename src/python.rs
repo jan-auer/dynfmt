@@ -87,6 +87,7 @@ fn parse_next(captures: Captures<'_>) -> ArgumentResult<'_> {
 /// Format argument iterator for [`PythonFormat`].
 ///
 /// [`PythonFormat`]: struct.PythonFormat.html
+#[derive(Debug)]
 pub struct PythonIter<'f> {
     captures: CaptureMatches<'static, 'f>,
 }
@@ -140,6 +141,7 @@ impl<'f> Iterator for PythonIter<'f> {
 /// ```
 ///
 /// [Python string formatting docs]: https://docs.python.org/2/library/stdtypes.html#string-formatting-operations
+#[derive(Debug)]
 pub struct PythonFormat;
 
 impl<'f> Format<'f> for PythonFormat {
