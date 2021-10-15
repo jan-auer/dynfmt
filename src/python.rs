@@ -29,20 +29,6 @@ fn parse_next(captures: Captures<'_>) -> ArgumentResult<'_> {
         .map(|m| Position::Key(m.as_str()))
         .unwrap_or_else(|| Position::Auto);
 
-    let format = match &captures["type"] {
-        "d" | "i" | "u" => FormatType::Display,
-        "o" => FormatType::Octal,
-        "x" => FormatType::LowerHex,
-        "X" => FormatType::UpperHex,
-        "e" => FormatType::LowerExp,
-        "E" => FormatType::UpperExp,
-        "f" | "F" | "g" | "G" => FormatType::Display,
-        "c" | "s" => FormatType::Display,
-        "r" => FormatType::Object,
-        "%" => FormatType::Literal("%"),
-        s => return Err(Error::BadFormat(s.chars().next().unwrap_or_default())),
-    };
-
     let mut alternate = false;
     let mut pad_zero = false;
     let mut alignment = Alignment::Right;
@@ -70,6 +56,24 @@ fn parse_next(captures: Captures<'_>) -> ArgumentResult<'_> {
         "*" => Some(Count::Ref(Position::Auto)),
         value => value.parse().ok().map(Count::Value),
     });
+
+    let format = match &captures["type"] {
+        "d" | "i" | "u" => FormatType::Display,
+        "o" => FormatType::Octal,
+        "x" => FormatType::LowerHex,
+        "X" => FormatType::UpperHex,
+        "e" => FormatType::LowerExp,
+        "E" => FormatType::UpperExp,
+        "f" | "F" | "g" | "G" => FormatType::Display,
+        "c" | "s" => {
+            // Cannot pad zeros on characters types
+            pad_zero = false;
+            FormatType::Display
+        }
+        "r" => FormatType::Object,
+        "%" => FormatType::Literal("%"),
+        s => return Err(Error::BadFormat(s.chars().next().unwrap_or_default())),
+    };
 
     let spec = ArgumentSpec::new(group.start(), group.end())
         .with_position(position)

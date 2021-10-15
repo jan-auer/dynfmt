@@ -182,6 +182,10 @@ pub enum Error<'a> {
     /// An I/O error occurred when writing into the target.
     #[error("{0}")]
     Io(#[source] io::Error),
+
+    /// An formatting error occurred when writing into the target.
+    #[error("{0}")]
+    Fmt(#[source] fmt::Error),
 }
 
 impl<'a> Error<'a> {
@@ -191,6 +195,7 @@ impl<'a> Error<'a> {
             FormatError::Type(ty) => Error::BadArg(position, ty),
             FormatError::Serde(err) => Error::BadData(position, err),
             FormatError::Io(err) => Error::Io(err),
+            FormatError::Fmt(err) => Error::Fmt(err),
         }
     }
 }
@@ -543,7 +548,10 @@ impl<'a> ArgumentSpec<'a> {
 
     /// Activate sign-aware zero padding.
     pub fn with_zeros(mut self, pad_zero: bool) -> Self {
-        self.pad_zero = pad_zero;
+        if pad_zero {
+            self.pad_zero = pad_zero;
+            self.fill_char = '0';
+        }
         self
     }
 
@@ -600,6 +608,11 @@ impl<'a> ArgumentSpec<'a> {
         Formatter::new(write)
             .with_type(self.format)
             .with_alternate(self.alternate)
+            .with_width(self.width.and_then(|count| match count {
+                Count::Value(value) => Some(value),
+                Count::Ref(_) => None,
+            }))
+            .with_fill_char(self.fill_char)
             .format(args.get_pos(self.position)?)
             .map_err(|e| Error::from_serialize(e, self.position))
     }

@@ -1,10 +1,12 @@
 use std::fmt;
+use std::fmt::Write;
 use std::io;
 use std::mem::{self, MaybeUninit};
 
 use serde::{Serialize, Serializer};
 #[cfg(feature = "json")]
 use serde_json::Serializer as JsonSerializer;
+use voca_rs::manipulate;
 
 use crate::{Argument, FormatType};
 
@@ -42,6 +44,7 @@ pub enum FormatError {
     Type(FormatType),
     Serde(String),
     Io(io::Error),
+    Fmt(fmt::Error),
 }
 
 impl fmt::Display for FormatError {
@@ -50,6 +53,7 @@ impl fmt::Display for FormatError {
             FormatError::Type(format) => write!(f, "cannot format as {}", format),
             FormatError::Serde(error) => write!(f, "{}", error),
             FormatError::Io(error) => write!(f, "{}", error),
+            FormatError::Fmt(error) => write!(f, "{}", error),
         }
     }
 }
@@ -153,6 +157,8 @@ pub struct Formatter<W> {
     target: FormatterTarget<W>,
     ty: FormatType,
     alternate: bool,
+    width: Option<usize>,
+    fill_char: char,
 }
 
 impl<W> Formatter<W>
@@ -164,6 +170,8 @@ where
             target: FormatterTarget::new(write),
             ty: FormatType::Display,
             alternate: false,
+            width: None,
+            fill_char: ' ',
         }
     }
 
@@ -174,6 +182,16 @@ where
 
     pub fn with_alternate(mut self, alternate: bool) -> Self {
         self.alternate = alternate;
+        self
+    }
+
+    pub fn with_width(mut self, width: Option<usize>) -> Self {
+        self.width = width;
+        self
+    }
+
+    pub fn with_fill_char(mut self, fill_char: char) -> Self {
+        self.fill_char = fill_char;
         self
     }
 
@@ -207,6 +225,30 @@ where
         } else {
             write!(self.target.as_write(), "{}", proxy).map_err(FormatError::Io)
         }
+    }
+
+    fn fmt_internal_with_padding<T>(
+        &mut self,
+        value: &T,
+        fmt: FormatFn<T>,
+    ) -> Result<(), FormatError> {
+        let length = match self.width {
+            Some(w) => w,
+            None => return self.fmt_internal(value, fmt),
+        };
+
+        let proxy = FmtProxy::new(value, fmt);
+        let staged = {
+            let mut staged = String::new();
+            if self.alternate {
+                write!(staged, "{:#}", proxy).map_err(FormatError::Fmt)?;
+            } else {
+                write!(staged, "{}", proxy).map_err(FormatError::Fmt)?;
+            }
+            staged
+        };
+        let padded = manipulate::pad_left(&staged, length, &self.fill_char.to_string());
+        write!(self.target.as_write(), "{}", padded).map_err(FormatError::Io)
     }
 
     // TODO: Implement this
@@ -563,7 +605,7 @@ where
 
     fn serialize_i8(self, v: i8) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
@@ -575,7 +617,7 @@ where
 
     fn serialize_i16(self, v: i16) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
@@ -587,7 +629,7 @@ where
 
     fn serialize_i32(self, v: i32) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
@@ -599,7 +641,7 @@ where
 
     fn serialize_i64(self, v: i64) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
@@ -611,7 +653,7 @@ where
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
@@ -623,7 +665,7 @@ where
 
     fn serialize_u16(self, v: u16) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
@@ -635,7 +677,7 @@ where
 
     fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
@@ -647,7 +689,7 @@ where
 
     fn serialize_u64(self, v: u64) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Octal => self.octal(&v),
             FormatType::LowerHex => self.lower_hex(&v),
@@ -659,7 +701,7 @@ where
 
     fn serialize_f32(self, v: f32) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::LowerExp => self.lower_exp(&v),
             FormatType::UpperExp => self.upper_exp(&v),
@@ -669,7 +711,7 @@ where
 
     fn serialize_f64(self, v: f64) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::LowerExp => self.lower_exp(&v),
             FormatType::UpperExp => self.upper_exp(&v),
@@ -679,7 +721,7 @@ where
 
     fn serialize_char(self, v: char) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             other => Err(FormatError::Type(other)),
         }
@@ -687,7 +729,7 @@ where
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
         match self.ty {
-            FormatType::Display => self.display(&v),
+            FormatType::Display => self.fmt_internal_with_padding(&v, fmt::Display::fmt),
             FormatType::Object => self.serialize(&v),
             FormatType::Pointer => self.pointer(&v),
             other => Err(FormatError::Type(other)),
