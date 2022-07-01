@@ -140,12 +140,12 @@ where
     where
         F: FnOnce(W) -> Self,
     {
-        unsafe {
+        
             let mut placeholder = MaybeUninit::uninit();
-            mem::swap(self, &mut *placeholder.as_mut_ptr());
-            let converted = f(placeholder.assume_init().into_inner());
+            mem::swap(self, unsafe {&mut *placeholder.as_mut_ptr()});
+            let converted = unsafe {f(placeholder.assume_init().into_inner())};
             mem::forget(mem::replace(self, converted));
-        }
+        
     }
 }
 
