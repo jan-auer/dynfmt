@@ -2,7 +2,7 @@
 name = "dynfmt"
 version = "0.1.5"
 authors = ["Jan Michael Auer <mail@jauer.org>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/jan-auer/dynfmt"
@@ -16,11 +16,11 @@ A crate for formatting strings dynamically.
 all-features = true
 
 [dependencies]
-erased-serde = "0.3.6"
-lazy_static = { version = "1.2.0", optional = true }
-regex = { version = "1.1.0", optional = true }
-serde = "1.0.84"
-serde_json = { version = "1.0.36", optional = true }
+erased-serde = "0.4"
+lazy_static = { version = "1.4", optional = true }
+regex = { version = "1", optional = true }
+serde = "1"
+serde_json = { version = "1", optional = true }
 thiserror = "1.0"
 
 [features]
