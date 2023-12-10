@@ -142,7 +142,7 @@ where
     {
         unsafe {
             let mut placeholder = MaybeUninit::uninit();
-            mem::swap(self, &mut *placeholder.as_mut_ptr());
+            core::ptr::swap(self, placeholder.as_mut_ptr());
             let converted = f(placeholder.assume_init().into_inner());
             mem::forget(mem::replace(self, converted));
         }
