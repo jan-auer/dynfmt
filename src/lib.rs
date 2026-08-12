@@ -648,19 +648,53 @@ pub trait Format<'f> {
             return Ok(Cow::Borrowed(format));
         }
 
-        let mut access = ArgumentAccess::new(arguments);
         let mut buffer = Vec::with_capacity(format.len());
+        self.format_into(&mut buffer, format, arguments)?;
+
+        Ok(Cow::Owned(unsafe { String::from_utf8_unchecked(buffer) }))
+    }
+
+    /// Formats the given string with the specified arguments and writes the result into the given writer.
+    ///
+    /// Individual arguments must implement [`Debug`] and [`serde::Serialize`]. The arguments
+    /// container must implement the [`FormatArgs`] trait.
+    ///
+    /// ```rust
+    /// use dynfmt::{Format, NoopFormat};
+    ///
+    /// let mut buffer = Vec::new();
+    /// NoopFormat.format_into(&mut buffer, "hello, world", &["unused"]).expect("formatting failed");
+    /// assert_eq!(b"hello, world", buffer.as_slice());
+    /// ```
+    ///
+    /// [`Debug`]: https://doc.rust-lang.org/stable/std/fmt/trait.Debug.html
+    /// [`serde::Serialize`]: https://docs.rs/serde/latest/serde/trait.Serialize.html
+    /// [`FormatArgs`]: trait.FormatArgs.html
+    fn format_into<W, A>(
+        &self,
+        mut write: W,
+        format: &'f str,
+        arguments: A,
+    ) -> Result<(), Error<'f>>
+    where
+        W: io::Write,
+        A: FormatArgs,
+    {
+        let mut access = ArgumentAccess::new(arguments);
         let mut last_match = 0;
 
-        for spec in iter {
+        for spec in self.iter_args(format)? {
             let spec = spec?;
-            buffer.extend(&format.as_bytes()[last_match..spec.start()]);
-            spec.format_into(&mut buffer, &mut access)?;
+            write
+                .write_all(&format.as_bytes()[last_match..spec.start()])
+                .map_err(Error::Io)?;
+            spec.format_into(&mut write, &mut access)?;
             last_match = spec.end();
         }
 
-        buffer.extend(&format.as_bytes()[last_match..]);
-        Ok(Cow::Owned(unsafe { String::from_utf8_unchecked(buffer) }))
+        write
+            .write_all(&format.as_bytes()[last_match..])
+            .map_err(Error::Io)
     }
 }
 
