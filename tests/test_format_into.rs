@@ -15,5 +15,5 @@ fn writes_formatted_output() {
 fn aborts_on_full_writer() {
     let mut buffer = [0u8; 8];
     let result = PythonFormat.format_into(buffer.as_mut_slice(), "hello, %s!", ["world"]);
-    assert!(matches!(result.unwrap_err(), Error::BadData(..)));
+    assert!(matches!(result.unwrap_err(), Error::Io(..)));
 }

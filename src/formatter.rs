@@ -179,8 +179,6 @@ where
     }
 
     pub fn format(&mut self, value: Argument<'_>) -> Result<(), FormatError> {
-        // TODO: Serde calls erased_serialize here, which always passes the error through
-        // Error::custom. In this process we lose the original error.
         value.serialize(self)
     }
 
