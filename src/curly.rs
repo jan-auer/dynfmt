@@ -4,13 +4,16 @@
 //!
 //! [`SimpleCurlyFormat`]: struct.SimpleCurlyFormat.html
 
+use std::sync::OnceLock;
+
 use regex::{CaptureMatches, Captures, Regex};
 
 use crate::{ArgumentResult, ArgumentSpec, Error, Format, Position};
 
-lazy_static::lazy_static! {
-/// The regular expression used for parsing simple curly format strings.
-    static ref PYTHON_RE: Regex = Regex::new(r"\{(?P<key>\w+)?\}").unwrap();
+/// Returns the regular expression used for parsing simple curly format strings.
+fn python_re() -> &'static Regex {
+    static PYTHON_RE: OnceLock<Regex> = OnceLock::new();
+    PYTHON_RE.get_or_init(|| Regex::new(r"\{(?P<key>\w+)?\}").unwrap())
 }
 
 fn parse_position(key: &str) -> Position<'_> {
@@ -40,7 +43,7 @@ pub struct SimpleCurlyIter<'f> {
 impl<'f> SimpleCurlyIter<'f> {
     fn new(format: &'f str) -> Self {
         SimpleCurlyIter {
-            captures: PYTHON_RE.captures_iter(format),
+            captures: python_re().captures_iter(format),
         }
     }
 }

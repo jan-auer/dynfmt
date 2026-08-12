@@ -4,21 +4,29 @@
 //!
 //! [`PythonFormat`]: struct.PythonFormat.html
 
+use std::sync::OnceLock;
+
 use regex::{CaptureMatches, Captures, Regex};
 
 use crate::{Alignment, ArgumentResult, ArgumentSpec, Count, Error, Format, FormatType, Position};
 
-lazy_static::lazy_static! {
-/// The regular expression used for parsing python format strings.
-    static ref PYTHON_RE: Regex = Regex::new(r"(?x)
-        %
-        (?:\((?P<key>\w+)\))?         # Mapping key
-        (?P<flags>[\#0\- +]*)?        # Conversion flags
-        (?P<width>\*|\d+)?            # Minimum field width
-        (?:.(?P<precision>\*|\d+))?   # Precision after decimal point
-        [hlL]*                        # Ignored length modifier
-        (?P<type>[diouxXeEfFgGcrs%])  # Conversion type
-    ").unwrap();
+/// Returns the regular expression used for parsing python format strings.
+fn python_re() -> &'static Regex {
+    static PYTHON_RE: OnceLock<Regex> = OnceLock::new();
+    PYTHON_RE.get_or_init(|| {
+        Regex::new(
+            r"(?x)
+                %
+                (?:\((?P<key>\w+)\))?         # Mapping key
+                (?P<flags>[\#0\- +]*)?        # Conversion flags
+                (?P<width>\*|\d+)?            # Minimum field width
+                (?:.(?P<precision>\*|\d+))?   # Precision after decimal point
+                [hlL]*                        # Ignored length modifier
+                (?P<type>[diouxXeEfFgGcrs%])  # Conversion type
+            ",
+        )
+        .unwrap()
+    })
 }
 
 fn parse_next(captures: Captures<'_>) -> ArgumentResult<'_> {
@@ -95,7 +103,7 @@ pub struct PythonIter<'f> {
 impl<'f> PythonIter<'f> {
     fn new(format: &'f str) -> Self {
         PythonIter {
-            captures: PYTHON_RE.captures_iter(format),
+            captures: python_re().captures_iter(format),
         }
     }
 }

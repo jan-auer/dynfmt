@@ -3,6 +3,7 @@ name = "dynfmt"
 version = "0.1.5"
 authors = ["Jan Michael Auer <mail@jauer.org>"]
 edition = "2018"
+rust-version = "1.70.0"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/jan-auer/dynfmt"
@@ -17,7 +18,6 @@ all-features = true
 
 [dependencies]
 erased-serde = "0.3.6"
-lazy_static = { version = "1.2.0", optional = true }
 regex = { version = "1.1.0", optional = true }
 serde = "1.0.84"
 serde_json = { version = "1.0.36", optional = true }
@@ -26,5 +26,5 @@ thiserror = "1.0"
 [features]
 default = ["json"]
 json = ["serde_json"]
-python = ["regex", "lazy_static"]
-curly = ["regex", "lazy_static"]
+python = ["regex"]
+curly = ["regex"]
