@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Add `Format::format_into` to write formatted output directly into a writer (courtesy of @tobias-wilfert).
+- Bump the minimum supported Rust version to 1.71.0.
+- Update to Rust 2021 edition.
+- Update internal dependencies.
+
 ## 0.1.5
 
 - Update error derivation approach to use [thiserror](https://crates.io/crates/thiserror).
