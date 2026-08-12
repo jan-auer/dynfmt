@@ -2,7 +2,7 @@
 name = "dynfmt"
 version = "0.1.5"
 authors = ["Jan Michael Auer <mail@jauer.org>"]
-edition = "2018"
+edition = "2021"
 rust-version = "1.71.0"
 license = "MIT"
 readme = "README.md"
